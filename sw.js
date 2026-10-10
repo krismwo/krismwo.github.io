@@ -1,4 +1,4 @@
-var CACHE = 'reszta-v1';
+var CACHE = 'reszta-v2';
 var FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', function (e) {

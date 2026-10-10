@@ -225,8 +225,6 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
       <h2>Historia</h2>
       <ul class="list" id="hist"></ul>
     </div>
-    <button class="btn ghost" id="shareBtn">Udostępnij / kopiuj napiwki</button>
-    <button class="btn ghost" id="wipe">Wyczyść wszystkie napiwki</button>
   </section>
 
   <section class="view" id="v-till">
@@ -236,14 +234,28 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
       <div class="tillhead"><h2>Co mam w kasie</h2><span id="tillTotal">0,00 zł</span></div>
       <div id="tillRows"></div>
     </div>
+    <button class="btn ghost" id="undoBtn" style="display:none">↶ Cofnij ostatnie wydanie</button>
+  </section>
+
+  <section class="view" id="v-set">
     <div class="card">
       <div class="tillhead"><h2>Ostrzeż, gdy zostanie mniej niż</h2><span id="minVal">5 szt.</span></div>
-      <div class="row"><button class="step" id="minMinus" style="flex:1;width:auto">−</button><button class="step" id="minPlus" style="flex:1;width:auto">+</button></div>
+      <p class="hint" style="margin-bottom:10px">Dotyczy nominałów w zakładce Kasa (przy włączonym pilnowaniu).</p>
+      <div class="row"><button class="step" id="minMinus" style="flex:1;width:auto" aria-label="Mniej">−</button><button class="step" id="minPlus" style="flex:1;width:auto" aria-label="Więcej">+</button></div>
     </div>
-    <button class="card toggle" id="fsAuto"><div><b>Pełny ekran</b><small>Włącza się po pierwszym dotknięciu ekranu</small></div><span class="pill on" id="fsPill">WŁ.</span></button>
-    <button class="btn ghost" id="fsNow">Pełny ekran: włącz / wyłącz teraz</button>
-    <button class="btn ghost" id="undoBtn" style="display:none">↶ Cofnij ostatnie wydanie</button>
+    <div class="card">
+      <h2>Wszystkie dane</h2>
+      <p class="hint" style="margin-bottom:10px">Ile gotówki masz, ile sztuk każdego nominału oraz napiwki.</p>
+      <button class="btn" id="shareAll">Udostępnij wszystko</button>
+      <button class="btn ghost" id="dlAll" style="margin-top:8px">Pobierz plik CSV</button>
+    </div>
+    <div class="card">
+      <h2>Wibracje</h2>
+      <p class="hint" style="margin-bottom:10px">Telefon wibruje przy każdym dotknięciu przycisku.</p>
+      <button class="btn ghost" id="vibTest">Sprawdź wibracje</button>
+    </div>
     <button class="btn ghost" id="tillReset">Wyzeruj kasę</button>
+    <button class="btn ghost" id="wipe">Wyczyść wszystkie napiwki</button>
   </section>
 </div>
 
@@ -261,6 +273,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
   <button class="on" data-v="change"><span>🧮</span>Reszta</button>
   <button data-v="tips"><span>💰</span>Napiwki</button>
   <button data-v="till"><i class="dot" id="lowDot"></i><span>🪙</span>Kasa</button>
+  <button data-v="set"><span>⚙️</span>Ustawienia</button>
 </div></nav>
 
 <script>
@@ -279,28 +292,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
   try { var tr = localStorage.getItem('kasa_v1'); if (tr){ var o = JSON.parse(tr); if (o) till = {track:!!o.track, c:o.c||{}, seen:o.seen||{}, min:(o.min==null?5:o.min)}; } } catch(e){}
   Object.keys(till.c).forEach(function(k){ if (till.c[k] > 0) till.seen[k] = true; });
   function persistTill(){ try { localStorage.setItem('kasa_v1', JSON.stringify(till)); } catch(e){} }
-  var ui = {fs:true};
-  try { var uu = localStorage.getItem('ui_v1'); if (uu){ var uo = JSON.parse(uu); if (uo && uo.fs != null) ui.fs = !!uo.fs; } } catch(e){}
-  function persistUi(){ try { localStorage.setItem('ui_v1', JSON.stringify(ui)); } catch(e){} }
-  function isFs(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
-  function goFs(){
-    var el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (!f) return;
-    try { var r = f.call(el); if (r && r.catch) r.catch(function(){}); } catch(e){}
-  }
-  function outFs(){
-    var f = document.exitFullscreen || document.webkitExitFullscreen;
-    if (f) { try { f.call(document); } catch(e){} }
-  }
-  // pierwsze dotknięcie po uruchomieniu włącza pełny ekran (przeglądarka wymaga gestu użytkownika)
-  document.addEventListener('click', function once(){
-    document.removeEventListener('click', once, true);
-    var installed = window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches);
-    if (ui.fs && !isFs() && !installed) goFs();
-  }, true);
   function isLow(d){ return till.track && till.min > 0 && till.seen[d] && (till.c[d]||0) < till.min; }
   function lowList(){ return DENOMS.filter(isLow); }
-  function buzz(){ try { if (navigator.vibrate) navigator.vibrate(8); } catch(e){} }
+  var lastBuzz = 0;
+  function buzz(ms){
+    var n = Date.now(); if (n - lastBuzz < 60) return; lastBuzz = n;
+    try { if (navigator.vibrate) navigator.vibrate(ms || 25); } catch(e){}
+  }
+  document.addEventListener('click', function(e){ if (e.target.closest && e.target.closest('button')) buzz(); }, true);
 
   function toCents(x){
     if (!x) return 0;
@@ -549,8 +548,6 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
     if (low.length){ lm.style.display = ''; lm.textContent = 'Kończą się: ' + low.map(label).join(', '); } else { lm.style.display = 'none'; }
     $('lowDot').style.display = low.length ? 'block' : 'none';
     $('minVal').textContent = till.min > 0 ? till.min + ' szt.' : 'wył.';
-    $('fsPill').textContent = ui.fs ? 'WŁ.' : 'WYŁ.';
-    $('fsPill').className = 'pill' + (ui.fs ? ' on' : '');
     $('undoBtn').style.display = lastUndo ? '' : 'none';
   }
   $('trackBtn').onclick = function(){ buzz(); till.track = !till.track; persistTill(); renderTill(); update(); };
@@ -558,8 +555,6 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
     if (confirm('Wyzerować wszystkie nominały w kasie?')){ till.c = {}; persistTill(); renderTill(); update(); }
   };
 
-  $('fsAuto').onclick = function(){ buzz(); ui.fs = !ui.fs; persistUi(); renderTill(); if (ui.fs && !isFs()) goFs(); };
-  $('fsNow').onclick = function(){ buzz(); if (isFs()) outFs(); else goFs(); };
   $('minMinus').onclick = function(){ buzz(); till.min = Math.max(0, till.min - 1); persistTill(); renderTill(); };
   $('minPlus').onclick = function(){ buzz(); till.min = Math.min(99, till.min + 1); persistTill(); renderTill(); };
   $('undoBtn').onclick = doUndo;
@@ -603,23 +598,67 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--tip);outline-of
     update();
   };
 
-  // udostępnianie napiwków
-  $('shareBtn').onclick = function(){
-    if (!tips.length){ toast('Brak napiwków'); return; }
-    var now = Date.now(), today = 0, week = 0, all = 0;
-    tips.forEach(function(x){ all += x.amt; if (sameDay(x.ts, now)) today += x.amt; if (now - x.ts < 7*86400000) week += x.amt; });
-    var lines = ['Napiwki: dziś ' + fmt(today) + ' zł, 7 dni ' + fmt(week) + ' zł, razem ' + fmt(all) + ' zł', ''];
+  // eksport wszystkich danych: kasa + napiwki
+  function pad2(n){ return (n < 10 ? '0' : '') + n; }
+  function stamp(d){ return pad2(d.getDate()) + '.' + pad2(d.getMonth()+1) + '.' + d.getFullYear() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function plain(c){ return fmt(c).replace(/\u00A0/g, ''); }
+  function totals(){
+    var now = Date.now(), r = {today:0, week:0, all:0, cash:0};
+    tips.forEach(function(x){ r.all += x.amt; if (sameDay(x.ts, now)) r.today += x.amt; if (now - x.ts < 7*86400000) r.week += x.amt; });
+    DENOMS.forEach(function(d){ r.cash += (till.c[d]||0) * d; });
+    return r;
+  }
+  function reportText(){
+    var tt = totals(), L = [];
+    L.push('Reszta i napiwki, stan na ' + stamp(new Date()), '');
+    L.push('GOTÓWKA W KASIE: ' + plain(tt.cash) + ' zł');
+    DENOMS.forEach(function(d){ var n = till.c[d]||0; if (n > 0) L.push(label(d) + ' × ' + n + ' = ' + plain(n*d) + ' zł'); });
+    if (tt.cash === 0) L.push('(kasa pusta albo nie wpisana)');
+    L.push('');
+    L.push('NAPIWKI: dziś ' + plain(tt.today) + ' zł, 7 dni ' + plain(tt.week) + ' zł, razem ' + plain(tt.all) + ' zł');
+    tips.forEach(function(x){ L.push(stamp(new Date(x.ts)) + '  +' + plain(x.amt) + ' zł'); });
+    return L.join('\n');
+  }
+  function reportCsv(){
+    var tt = totals(), L = [];
+    L.push('Raport;' + stamp(new Date()));
+    L.push('Gotówka w kasie (zł);' + plain(tt.cash));
+    L.push('');
+    L.push('Nominał;Sztuk;Wartość (zł)');
+    DENOMS.forEach(function(d){ var n = till.c[d]||0; L.push(label(d) + ';' + n + ';' + plain(n*d)); });
+    L.push('');
+    L.push('Napiwki dziś (zł);' + plain(tt.today));
+    L.push('Napiwki 7 dni (zł);' + plain(tt.week));
+    L.push('Napiwki razem (zł);' + plain(tt.all));
+    L.push('');
+    L.push('Data;Godzina;Kwota (zł)');
     tips.forEach(function(x){
       var d = new Date(x.ts);
-      lines.push(d.toLocaleDateString('pl-PL') + ' ' + d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'}) + ';' + fmt(x.amt).replace('\u00A0',''));
+      L.push(pad2(d.getDate()) + '.' + pad2(d.getMonth()+1) + '.' + d.getFullYear() + ';' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ';' + plain(x.amt));
     });
-    var text = lines.join('\n');
+    return L.join('\r\n');
+  }
+  $('shareAll').onclick = function(){
+    var text = reportText();
     function fallback(){
       try { navigator.clipboard.writeText(text).then(function(){ toast('Skopiowano do schowka'); }, function(){ prompt('Skopiuj:', text); }); }
       catch(e){ prompt('Skopiuj:', text); }
     }
-    if (navigator.share){ navigator.share({title:'Napiwki', text:text}).catch(function(err){ if (!err || err.name !== 'AbortError') fallback(); }); }
+    if (navigator.share){ navigator.share({title:'Reszta i napiwki', text:text}).catch(function(err){ if (!err || err.name !== 'AbortError') fallback(); }); }
     else fallback();
+  };
+  $('dlAll').onclick = function(){
+    var d = new Date();
+    var blob = new Blob(['\uFEFF' + reportCsv()], {type:'text/csv;charset=utf-8'});
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'reszta-' + d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    toast('Plik CSV pobrany');
+  };
+  $('vibTest').onclick = function(){
+    if (!navigator.vibrate){ toast('Ta przeglądarka nie obsługuje wibracji'); return; }
+    navigator.vibrate(200); toast('Wysłano wibrację');
   };
 
   function sameDay(a,b){ return new Date(a).toDateString() === new Date(b).toDateString(); }
