@@ -1,8 +1,12 @@
-var CACHE = 'reszta-v2';
+var CACHE = 'reszta-v3';
 var FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(function (c) { return Promise.all(FILES.map(function (f) { return c.add(new Request(f, { cache: 'reload' })); })); })
+      .then(function () { return self.skipWaiting(); })
+  );
 });
 
 self.addEventListener('activate', function (e) {
@@ -13,19 +17,27 @@ self.addEventListener('activate', function (e) {
   );
 });
 
-// Działa offline: odpowiada z pamięci, a w tle pobiera nowszą wersję (pojawi się przy następnym uruchomieniu).
+// Najpierw sieć (nowa wersja od razu, gdy jest internet), a bez internetu lub przy bardzo wolnej sieci kopia z pamięci telefonu.
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(function (cached) {
-      var net = fetch(e.request).then(function (res) {
-        if (res && res.ok) {
-          var copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
-        }
-        return res;
-      }).catch(function () { return cached || caches.match('index.html'); });
-      return cached || net;
-    })
-  );
+  e.respondWith(new Promise(function (resolve) {
+    var done = false;
+    function finish(res) { if (!done && res) { done = true; resolve(res); } }
+    var timer = setTimeout(function () {
+      caches.match(e.request, { ignoreSearch: true }).then(finish);
+    }, 2500);
+    fetch(e.request, { cache: 'no-cache' }).then(function (res) {
+      clearTimeout(timer);
+      if (res && res.ok) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
+      }
+      finish(res);
+    }).catch(function () {
+      clearTimeout(timer);
+      caches.match(e.request, { ignoreSearch: true }).then(function (c) {
+        return c || caches.match('index.html');
+      }).then(finish);
+    });
+  }));
 });
